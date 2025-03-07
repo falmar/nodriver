@@ -1345,6 +1345,42 @@ class Tab(Connection):
         )
         await self.wait(0.1)
 
+    async def take_screenshot(
+            self,
+            format: Optional[str] = "jpeg",
+            full_page: Optional[bool] = False,
+    ) -> str:
+        """
+        Takes a screenshot of the page.
+
+        :param format: jpeg or png (defaults to jpeg)
+        :type format: str
+        :param full_page: when False (default) it captures the current viewport. when True, it captures the entire page
+        :type full_page: bool
+        :return: the base64 text of taken screenshot
+        :rtype: str
+        """
+        # noqa
+        await self.sleep()  # update the target's url
+
+        if format.lower() in ["jpg", "jpeg"]:
+            format = "jpeg"
+
+        elif format.lower() in ["png"]:
+            format = "png"
+
+        data = await self.send(
+            cdp.page.capture_screenshot(
+                format_=format, capture_beyond_viewport=full_page
+            )
+        )
+        if not data:
+            raise ProtocolException(
+                "could not take screenshot. most possible cause is the page has not finished loading yet."
+            )
+
+        return str(data)
+
     async def save_screenshot(
         self,
         filename: Optional[PathLike] = "auto",
@@ -1368,9 +1404,6 @@ class Tab(Connection):
         import datetime
         import urllib.parse
 
-        await self.sleep()  # update the target's url
-        path = None
-
         if format.lower() in ["jpg", "jpeg"]:
             ext = ".jpg"
             format = "jpeg"
@@ -1390,21 +1423,16 @@ class Tab(Connection):
         else:
             path = pathlib.Path(filename)
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = await self.send(
-            cdp.page.capture_screenshot(
-                format_=format, capture_beyond_viewport=full_page
-            )
-        )
-        if not data:
-            raise ProtocolException(
-                "could not take screenshot. most possible cause is the page has not finished loading yet."
-            )
-        import base64
 
-        data_bytes = base64.b64decode(data)
         if not path:
             raise RuntimeError("invalid filename or path: '%s'" % filename)
+
+        import base64
+
+        data = await self.take_screenshot(format=format, full_page=full_page)
+        data_bytes = base64.b64decode(data)
         path.write_bytes(data_bytes)
+
         return str(path)
 
     async def set_download_path(self, path: PathLike):

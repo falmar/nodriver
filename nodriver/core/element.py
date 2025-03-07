@@ -835,6 +835,43 @@ class Element:
     #         )
     #         # doc = await self.send(cdp.dom.get_document(-1, True))
 
+    async def take_screenshot(
+            self,
+            format: typing.Optional[str] = "jpeg",
+            scale: typing.Optional[typing.Union[int, float]] = 1,
+    ):
+        """
+        Takes a screenshot of this element (only)
+
+        :param format: jpeg or png (defaults to jpeg)
+        :type format: str
+        :param scale: the scale of the screenshot, eg: 1 = size as is, 2 = double, 0.5 is half
+        :return: the base64 text of taken screenshot
+        :rtype: str
+        """
+
+        pos = await self.get_position()
+        if not pos:
+            raise RuntimeError(
+                "could not determine position of element. probably because it's not in view, or hidden"
+            )
+        viewport = pos.to_viewport(scale)
+
+        await self.tab.sleep()
+
+        data = await self._tab.send(
+            cdp.page.capture_screenshot(
+                format, clip=viewport, capture_beyond_viewport=True
+            )
+        )
+        if not data:
+            from .connection import ProtocolException
+            raise ProtocolException(
+                "could not take screenshot. most possible cause is the page has not finished loading yet."
+            )
+
+        return str(data)
+
     async def save_screenshot(
         self,
         filename: typing.Optional[PathLike] = "auto",
@@ -860,13 +897,6 @@ class Element:
         import datetime
         import urllib.parse
 
-        pos = await self.get_position()
-        if not pos:
-            raise RuntimeError(
-                "could not determine position of element. probably because it's not in view, or hidden"
-            )
-        viewport = pos.to_viewport(scale)
-        path = None
         await self.tab.sleep()
         if not filename or filename == "auto":
             parsed = urllib.parse.urlparse(self.tab.target.url)
@@ -887,22 +917,13 @@ class Element:
             path = pathlib.Path(filename)
 
         path.parent.mkdir(parents=True, exist_ok=True)
-        data = await self._tab.send(
-            cdp.page.capture_screenshot(
-                format, clip=viewport, capture_beyond_viewport=True
-            )
-        )
-        if not data:
-            from .connection import ProtocolException
-
-            raise ProtocolException(
-                "could not take screenshot. most possible cause is the page has not finished loading yet."
-            )
-
-        data_bytes = base64.b64decode(data)
         if not path:
             raise RuntimeError("invalid filename or path: '%s'" % filename)
+
+        data = await self.take_screenshot(format=format, scale=scale)
+        data_bytes = base64.b64decode(data)
         path.write_bytes(data_bytes)
+
         return str(path)
 
     async def flash(self, duration: typing.Union[float, int] = 0.5):
